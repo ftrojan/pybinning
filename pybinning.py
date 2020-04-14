@@ -4,6 +4,7 @@ Created at 2018-09-04
 Binning toolbox
 @author: com-ftrojan
 """
+import logging
 import pandas as pd
 import numpy as np
 import tqdm
@@ -37,12 +38,17 @@ class Binning(object):
         """Performs automatic binning on given DataFrame using specified binning_function."""
         y = self.df[self.target_name]
         self.bb = []
-        np = len(self.predictor_names)
+        num_predictors = len(self.predictor_names)
         if verbose:
-            l = tqdm.tqdm(range(np), total=np, desc="Autobinning")
+            yn = y[~self.bts]
+            ys = y[self.bts]
+            logging.debug(f"{y.sum()} positive observations in total, positive rate {100*y.mean():.1f}%.")
+            logging.debug(f"{yn.sum()} positive observations in train, positive rate {100*yn.mean():.1f}%.")
+            logging.debug(f"{ys.sum()} positive observations in test, positive rate {100*ys.mean():.1f}%.")
+            iter_predictors = tqdm.tqdm(range(num_predictors), total=num_predictors, desc="Autobinning")
         else:
-            l = range(np)
-        for i in l:
+            iter_predictors = range(num_predictors)
+        for i in iter_predictors:
             xname = self.predictor_names[i]
             x = self.df[xname]
             bx0 = {'ordnum': i, 'varname': xname, 'success': False}
@@ -56,6 +62,12 @@ class Binning(object):
                 bx = bx0.copy()
                 bx.update(bx1)
             self.bb.append(bx)
+        bdf = self.getbdf()
+        logging.debug(f"{num_predictors} features processed")
+        bfp = bdf['flag_predictor']
+        bs = bdf['success']
+        logging.debug(f"{bfp.sum()} features flagged as predictor ({100*bfp.mean():.0f}% success rate).")
+        logging.debug(f"{bs.sum()} features successfully binned ({100*bs.mean():.0f}% success rate).")
 
     def getbdf(self):
         """Returns binning results formatted as DataFrame one row per predictor."""
@@ -230,6 +242,8 @@ def grid_decode(code, classx):
             borders = pd.concat(bor, axis=0).reset_index()
         else:
             borders = pd.DataFrame([("", 1)], columns=["level", "id_bin"])
+    else:
+        borders = None
     return borders
 
 
@@ -276,7 +290,7 @@ def create_summary(h0, missbin):
     ub = [*h0, +np.inf]
     i0 = range(len(h0) + 1)
     nm = [interval_name(lb[i], ub[i]) for i in i0]
-    if set([missbin]) < set(i0):  # missing is merged with an existing bin
+    if {missbin} < set(i0):  # missing is merged with an existing bin
         i1 = i0
         nm[missbin] += " NA"
     else:
@@ -297,7 +311,7 @@ def complete_summary(d, t0):
     t = t0.copy().assign(n=0, m=0, r=0.0, p=0.0, woe=0.0)
     for i in range(len(t0)):
         ii = d.loc[:, 'x'] == t0.index[i]
-        t.at[i, 'n'] = sum(ii)
+        t.at[i, 'n'] = ii.sum()
         t.at[i, 'm'] = d.loc[ii, 'y'].sum()
         t.at[i, 'r'] = t.at[i, 'n'] / nt
         if t.at[i, 'n'] > 0:
@@ -425,8 +439,7 @@ def bins_eq_frequency(x, nbins, dec):
     if np.nansum(x < h1[0]) == 0:  # mass probability at min value greater than 1/nbins
         if len(h1) >= 2:
             h2 = h1[1:]
-        elif np.nanmax(x) == h1[
-            0]:  # mass probability at min value equal to 1 (all observations concentrated at one value)
+        elif np.nanmax(x) == h1[0]:  # mass probability at min value equal to 1 (all observations concentrated at one value)
             h2 = [np.nan]
         else:  # mass probability at min value greater than (nbins - 1)/nbins
             h2 = [np.min(x[x > h1[0]])]
@@ -447,6 +460,8 @@ def suggest_decimal(pprofile):
             dec = int(round(3 - np.log10(p75 - p25), 0))
         else:
             dec = 2
+    else:
+        dec = 2
     return dec
 
 
@@ -551,7 +566,7 @@ def plot_binning_aux(plotdata, tit, xlab, tr):
     tp = np.linspace(0, cax[1], 6)
     plt.rcParams['figure.figsize'] = (12.0, 6.75)
     fig, ax1 = plt.subplots()
-    flag_spyder = 1 # set to 0 if run from Jupyter
+    flag_spyder = 1  # set to 0 if run from Jupyter
     ax1.bar(xdata - flag_spyder * bar_width / 2, yn, bar_width, alpha=1.0, color=[126 / 256, 192 / 256, 238 / 256])
     ax1.set_yticks(tn)
     ax1.set_yticklabels(["{:.0%}".format(x) for x in tn])
