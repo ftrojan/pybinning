@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
+import yaml
 
 # catch all RuntimeWarning events and be able to debug them
 np.seterr(all='raise')
@@ -57,7 +58,8 @@ class Binning(object):
                 bx = bx0.copy()
                 bx['success'] = True
                 bx.update(bx1)
-            except:
+            except Exception as e:
+                logging.error(f"{xname}: Exception {e}")
                 bx1 = predictor_profile(x)
                 bx = bx0.copy()
                 bx.update(bx1)
@@ -163,12 +165,38 @@ class Binning(object):
         )
         return ftn
 
+    def save(self, filename: str):
+        def subset(x, keys):
+            y = {k: x[k] for k in keys}
+            y['class_name'] = str(x['cl'])
+            return y
+        logging.debug(f"saving into {filename}")
+        save_keys = ['code', 'missbin']
+        tosave = {b['varname']: subset(b, save_keys) for b in self.bb if b['flag_predictor'] and b['success']}
+        with open(filename, 'w') as out:
+            yaml.dump(tosave, out, indent=2, default_flow_style=False, sort_keys=False)
+        logging.debug(f"saved into {filename}")
+
+    def load(self, filename: str):
+        """Override code and missbin of the current binning with the values saved in yaml file."""
+        with open(filename, 'r') as inp:
+            bbload = yaml.load(inp)
+        varname = [b['varname'] for b in self.bb]
+        for key, value in bbload.items():
+            index = varname.index(key)
+            if index:
+                binrec = self.bb[index]
+                binrec['code'] = value['code']
+                binrec['missbin'] = value['missbin']
+            else:
+                logging.warning(f"{key}: feature not found in the current binning")
+
 
 def dict2tuple(bx, cols, missval=np.nan):
     return tuple([bx.get(col, missval) for col in cols])
 
 
-def preprocess(x):
+def preprocess(x: pd.Series):
     classx = x.dtype
     i0 = x.isnull()
     nmiss = i0.sum()
@@ -321,8 +349,10 @@ def complete_summary(d, t0):
 
 
 def make_summary(j, y, t0, code, bts, pprofile, missbin):
-    d = pd.concat([pd.Series(j), y], axis=1)
-    d.columns = ['x', 'y']
+    d = pd.DataFrame({
+        'x': pd.Series(j),
+        'y': y,
+    })
     assert len(d) > 0, "DataFrame with group indexes is empty"
     if any(bts) and any(~bts):
         sn = complete_summary(d.loc[~bts, :], t0)
@@ -349,7 +379,7 @@ def group_summary(tt):
     # pro character prediktory zgrupne podle id_bin
     # vstup DataFrame[level, id_bin]
     # vystup DataFrame[id_bin, bin]
-    yy = tt.groupby('id_bin')['level'].agg(strconcat)
+    yy = tt.groupby('id_bin').agg(strconcat)
     yy['id_bin'] = yy.index
     yy.columns = ['id_bin', 'bin']
     return yy
@@ -422,8 +452,8 @@ def binning_manual(x, y, bts, code, missbin):
     elif classx == np.object:
         tt = grid_decode(code, classx)  # prevodni tabulka level -> bin
         j = np.zeros((len(x),))
-        for i in tt.index.tolist():
-            j[x == tt.at[i, 'level']] = tt.at[i, 'id_bin']
+        for level, id_bin in zip(tt.level, tt.id_bin):
+            j[x == level] = id_bin
         j[x.isnull()] = missbin
         t0 = group_summary(tt)
         b = make_summary(j, y, t0, code, bts, pprofile, missbin)
@@ -486,9 +516,9 @@ def binning_eq_frequency(x, y, bts, nbins):
             missbin = len(v) - 1  # posledni bin
             bx = binning_manual(x, y, bts, code, missbin)
         else:
-            bx = None
+            bx = pp
     else:
-        bx = None
+        bx = pp
     return bx
 
 
@@ -508,8 +538,8 @@ def pred_grp(x, b):
     elif classx == np.object:
         tt = grid_decode(b['code'], classx)
         j = np.zeros((len(x),))
-        for i in tt.index.tolist():
-            j[x == tt.at[i, 'level']] = tt.at[i, 'id_bin']
+        for level, id_bin in zip(tt.level, tt.id_bin):
+            j[x == level] = id_bin
         j[x.isnull()] = b['missbin']
     else:
         j = np.zeros(len(x))

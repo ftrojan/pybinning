@@ -23,7 +23,7 @@ hnames = [
     "T02",
     "H02"
 ]
-pnames = list(set(rdata.columns) - set([tgname]) - set(hnames))
+pnames = list(set(rdata.columns) - {tgname} - set(hnames))
 pnames.sort()
 
 # 3 train/test SPLIT 80/20
@@ -36,8 +36,8 @@ its = list(set(range(n)) - set(itn))
 # 4 AUTOBINNING
 b0 = bt.Binning(rdata, tgname, pnames, its)
 b0.autobinning(bt.binning_eq_frequency, verbose=True, nbins=3)
-bb = b0.getbdf() # binning dataframe
-print("success rate = %.3f" % bb['success'][bb['flag_predictor']==1].mean())
+bb = b0.getbdf()  # binning dataframe
+print("success rate = %.3f" % bb['success'][bb['flag_predictor'] == 1].mean())
 
 # 5 MANUAL CORRECTIONS OF BINNING
 b0.adjust_binning("P075", code = "8", missbin = 1)
@@ -58,10 +58,11 @@ b0.adjust_binning("P189", code = "-0.06, 0.02", missbin = 0)
 b0.adjust_binning("P124", code = "0.54, 1.09", missbin = 2)
 b0.adjust_binning("P212", code = "4.07, 11.78", missbin = 2)
 b0.adjust_binning("P215", code = "0, 1.22", missbin = 3)
+b0.save('binning.yaml')
 
 # 6 WOE TRANSFORMATION -> output dataset for modeling
-wdata = b0.predict(rdata, verbose = True)
-wdata.to_csv("out/woe_dataset.txt", sep="\t", index=False)
+wdata = b0.predict(rdata, verbose=True)
+wdata.to_csv("woe_dataset.txt", sep="\t", index=False)
 
 # 7 binning plots
 varnames = [
@@ -86,5 +87,5 @@ varnames = [
 ]
 for i in range(len(varnames)):
     varname = varnames[i]
-    b0.plot_binning(varname, 'out')
-    print("%d/%d\n" % (i+1, len(varnames)))
+    # b0.plot_binning(varname, '.')
+    print("%d/%d" % (i+1, len(varnames)))
